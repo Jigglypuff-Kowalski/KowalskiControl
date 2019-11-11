@@ -1,0 +1,126 @@
+//ASSUME THAT THE MINIMUM DISTANCE BETWEEN BOXES IS EQUAL -
+//TO THE DISTANCE BETWEN THE CAMERA AND THE ULTRASONIC SENSOR
+
+
+//Global booleans
+bool newBox = false;
+bool boxPicked = false;
+bool maxHeight = false;
+
+//holds the value of the next blocks encoder location
+int nextBoxLocation = 0;
+
+//Constant Variables
+const double HEIGHT = "Distance from sensor to conveyor (centimeters)";
+const double PICKUP = "Distance from camera to pick up location (inches)";
+
+//Trivial function just checks if box is under ultrasonic sensor
+bool checkLocation()
+{
+	if(SensorValue[S1] != HEIGHT)
+		return true;
+}
+
+
+//Function that Dimensions the boxes
+ void dimensionBox()
+ {
+   //Find box depth
+	 double boxDepth = 0;
+	 boxDepth = HEIGHT - SensorValue[S1]; // difference between the top of the box and the top of the conveyor
+	 wait1Msec(500); // just makes sure we get accurate reading
+
+
+	 //Move box until at the center of the camera field of view
+ 	 motor[motorA] = 50;
+	 while(!At camera center) //Moves the conveyor until the camera see the box
+	 {
+	   //In the case that there is a box ahead of the current box
+	   //If the ahead box reaches the pickup location the conveyor must wait for it to be picked up
+	   if(((nMotorEncoder[motorA] - currentBoxLocation) * 0.8 * PI / 180) < PICKUP)
+	   {
+	     motor[motorA] = 0;
+	     while(!boxPicked)
+	     {}
+	   	 boxPicked = true; //This means that in the main funtion loop we will skip another pick up
+	   	 motor[motorA] = 50;
+	   }
+	   //conveyor continues after ahead box is picked up
+	 }
+	 motor[motorA] = 0;
+
+	 newBox = false;
+	 nextBoxLocation = nMotorEncoder[motorA]; //Get the current encoder value when this box is at the camera center
+
+	 //RUN OPEN CV SHIT
+ }
+
+
+//Main Program
+task main()
+{
+
+	//Configure all Sensors
+	SensorType[S3] = sensorEV3_Color;
+	wait1Msec(50);
+	SensorMode[S3] = modeEV3Color_Color;
+	wait1Msec(50);
+	SensorType[S2] = sensorEV3_Ultrasonic;
+	wait1Msec(50);
+	SensorType[S1] = sensorEV3_Ultrasonic;
+	wait1Msec(50);
+
+	while(!maxHeight)
+	{
+		//wait until a box is placed onto conveyor
+		while(SensorValue[S2] >= 25)
+		{}
+
+
+		//Move box until its under the ultrasonic
+		motor[motorA] = 50;
+		while (SensorValue[S1] == HEIGHT)
+		{}
+		wait1Msec(100);
+		motor[motorA] = 0;
+
+		while(SensorValue[S1] != HEIGHT)
+		{
+			dimensionBox():
+
+			//Move box until its centered at pick up location
+			do{
+
+				  //If the box is between the camera and the pick up
+					//This makes sure that we still only move the conveyor until that box is at the pick up
+					currentBoxLocation = nMotorEncoder[motorA] + (nMotorEncoder[motorA] - nextBoxLocation);
+					motor[motorA] = 50;
+
+					while(((nMotorEncoder[motorA] - currentBoxLocation) * 0.8 * PI / 180) < PICKUP)
+					{
+
+						//While moving to the pick up if a second box appears under the ultrasonic sensor
+						newBox = checkLocation();
+						if(newBox)
+							dimensionBox();
+					}
+					motor[motorA] = 0;
+					while(!boxPicked)
+					{}
+			  }while(newBox) //This loop we run until a box is picked up with no other box sensed on the conveyor
+
+			 //However the instance still exists where a box is on the conveyor but hasnt reached the ultrasonic
+			 //Therefore run the conveyor for one loop or until a box is found
+
+			 motor[motorA] = 50;
+			 int cycle = nMotorEncoder[motorA];
+			 while (SensorValue[S1] != HEIGHT || (nMotorEncoder[motorA] - cycle) < (15*180/(PI*0.8))
+			 {}
+			 //If a box is found the code will continue from the inner loop and dimension the box
+			 //If a box is not found, the code will exit to th eouter loop and will not run
+			 //Until another box is placed infront of the first ultrasonic sensor
+		}
+	}
+
+
+}
