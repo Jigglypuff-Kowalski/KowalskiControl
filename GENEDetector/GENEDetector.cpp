@@ -1,5 +1,3 @@
-/*
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #include <iostream>
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
@@ -11,25 +9,21 @@ int main(int argc, char** argv)
 {
 	VideoCapture cap(0); //capture the video from webcam
 
-
 	if (!cap.isOpened())  // if not success, exit program
 	{
 		cout << "Cannot open the web cam" << endl;
 		return -1;
 	}
 
-	//namedWindow("Control", CV_WINDOW_AUTOSIZE); //create a window called "Control"
-	cv::namedWindow("Control", cv::WINDOW_AUTOSIZE);
+	int iLowH = 20;
+	int iHighH = 30;
 
-	int iLowH = 170;
-	int iHighH = 179;
-
-	int iLowS = 150;
+	int iLowS = 100;
 	int iHighS = 255;
 
-	int iLowV = 60;
+	int iLowV = 100;
 	int iHighV = 255;
-
+	/*
 	//Create trackbars in "Control" window
 	createTrackbar("LowH", "Control", &iLowH, 179); //Hue (0 - 179)
 	createTrackbar("HighH", "Control", &iHighH, 179);
@@ -39,17 +33,13 @@ int main(int argc, char** argv)
 
 	createTrackbar("LowV", "Control", &iLowV, 255);//Value (0 - 255)
 	createTrackbar("HighV", "Control", &iHighV, 255);
-
+	*/
 	int iLastX = -1;
 	int iLastY = -1;
 
 	//Capture a temporary image from the camera
 	Mat imgTmp;
 	cap.read(imgTmp);
-
-	//Create a black image with the size as the camera output
-	Mat imgLines = Mat::zeros(imgTmp.size(), CV_8UC3);;
-
 
 	while (true)
 	{
@@ -93,30 +83,38 @@ int main(int argc, char** argv)
 			//calculate the position of the ball
 			int posX = dM10 / dArea;
 			int posY = dM01 / dArea;
-			cout << " Coord X: " << posX << " Coord Y: " << posY << " Area: " << dArea << endl; 
-
-			if (iLastX >= 0 && iLastY >= 0 && posX >= 0 && posY >= 0)
-			{
-				//Draw a red line from the previous point to the current point
-				line(imgLines, Point(posX, posY), Point(iLastX, iLastY), Scalar(0, 0, 255), 2);
-			}
-
-			iLastX = posX;
-			iLastY = posY;
 		}
 
-		imshow("Thresholded Image", imgThresholded); //show the thresholded image
+		vector<vector<Point> > contours;
+		findContours(imgThresholded, contours, RETR_TREE, CHAIN_APPROX_SIMPLE);
 
-		imgOriginal = imgOriginal + imgLines;
-		imshow("Original", imgOriginal); //show the original image
-
-		if (waitKey(30) == 27) //wait for 'esc' key press for 30ms. If 'esc' key is pressed, break loop
+		vector<vector<Point> > contours_poly(contours.size());
+		vector<Rect> boundRect(contours.size());
+		vector<Point2f>centers(contours.size());
+		vector<float>radius(contours.size());
+		for (size_t i = 0; i < contours.size(); i++)
 		{
-			cout << "esc key is pressed by user" << endl;
-			break;
+			approxPolyDP(contours[i], contours_poly[i], 3, true);
+			boundRect[i] = boundingRect(contours_poly[i]);
 		}
+
+		Mat drawing = Mat::zeros(imgThresholded.size(), CV_8UC3);
+
+		for (size_t i = 0; i < contours.size(); i++)
+		{
+			Scalar color = Scalar(0, 255, 0, 10);
+			rectangle(drawing, boundRect[i].tl(), boundRect[i].br(), color, 2);
+			if ((boundRect[i].height * boundRect[i].width) > 5000)
+			{
+				drawContours(drawing, contours_poly, (int)i, color);
+				cout << boundRect[i].height << " is the x dimension" << endl;
+				cout << boundRect[i].width << " is the y dimension" << endl;
+			}
+		}
+
+		imshow("Drawing", drawing);
+		waitKey(1);
 	}
 
 	return 0;
 }
-*/

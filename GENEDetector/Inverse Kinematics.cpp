@@ -15,6 +15,7 @@ const double LEN_A = 5.0;
 const double LEN_B = 4.0; 
 const double M_PI = 3.141592653589793238463; 
 
+/*
 int main(int argc, char** argv)
 {
 	double curr_angOne = 25; 
@@ -47,7 +48,7 @@ int main(int argc, char** argv)
 
 	}
 }
-
+*/
 //InverseKinematics calculates the joint angles given an endpoint
 //Point p - endpoint in Cartesian space
 //double curr_ang1 - current angle of first joint
