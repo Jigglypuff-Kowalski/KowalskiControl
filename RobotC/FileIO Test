@@ -1,0 +1,28 @@
+
+#include "PC_FileIO.c"
+task main()
+{
+
+TFileHandle fin;
+bool fileOkay = openReadPC(fin, "Hello.txt");
+
+if(!fileOkay)
+{
+
+}
+
+for(int i=0; i<7;i++)
+{
+	while(!getButtonPress(buttonAny))
+	{}
+	while(getButtonPress(buttonAny))
+	{}
+	bool fileOkay = openReadPC(fin, "Hello.txt");
+
+	int value = 0;
+	readIntPC(fin, value);
+	displayString(i, "%d",value);
+}
+closeFilePC(fin);
+
+}
