@@ -1,0 +1,150 @@
+#include "EV3Servo-lib-UW.c"
+
+//2.5 ticks is one degree
+const float T_DEGS = 2.5;
+const float TOL = 2;
+const float LEN_A = 5.0;
+const float LEN_B = 4.0;
+const float ARM_A_OFFSET = -70;
+const float ARM_B_OFFSET = -50;
+
+const float CLAW_X_OFFSET = 1.97;
+const float CLAW_Y_OFFSET = 2.68;
+
+void moveTurret(float degrees)
+{
+	degrees = degrees * T_DEGS;
+	if(degrees>0)
+	{
+		motor[motorA] = 10;
+		while (nMotorEncoder[motorA] < degrees)
+		{}
+	}
+	else if(degrees == 0)
+	{
+		if (nMotorEncoder[motorA] > 0)
+		{
+			motor[motorA] = -10;
+		}
+		else
+		{
+			motor[motorA] = 10;
+		}
+		while (fabs(nMotorEncoder[motorA]) > TOL)
+		{}
+	}
+	else
+	{
+		motor[motorA] = -15;
+		while (nMotorEncoder[motorA] > degrees)
+		{}
+	}
+	motor[motorA] = 0;
+}
+
+void grip(int position)
+{
+	if (position == 1)
+	{
+		setServoSpeed(S1,3,20);
+		wait1Msec(1000);
+	}
+	else
+	{
+		setServoSpeed(S1,3,-50);
+		wait1Msec(1000);
+	}
+}
+
+typedef struct
+{
+    float x;
+    float y;
+    float z;
+}Point;
+
+void inverseKinematics(Point end_point, float & new_ang1, float & new_ang2, float new_angZ);
+float PointDistance(Point p1, Point p2);
+float toRadians(float angle);
+float toDegrees(float angle);
+
+task main()
+{
+
+	SensorType[S1]=sensorI2CCustom9V;
+	nMotorEncoder[motorA] = 0;
+
+	float new_ang_a = 0;
+	float new_ang_b = 0;
+	float new_ang_c = 0;
+
+	Point end_point;
+	end_point.x = 9.076 - CLAW_X_OFFSET;
+	end_point.y = -2.396 + CLAW_Y_OFFSET;
+	end_point.z = 0;
+
+	while(true)
+	{
+	inverseKinematics(end_point, new_ang_a, new_ang_b, new_ang_c);
+	moveTurret(new_ang_c);
+	setServoPosition(S1, 1, new_ang_b);
+	setServoPosition(S1, 2, new_ang_a);
+	}
+
+}
+
+//InverseKinematics calculates the joint angles given an endpoint
+//Point p - endpoint in Cartesian space
+//double curr_ang1 - current angle of first joint
+//double curr_ang2 - current angle of second joint
+//return - new first and second joint angles
+
+void inverseKinematics(Point end_point, float & new_ang1, float & new_ang2, float & new_angZ){
+
+	Point origin;
+	origin.x = 0;
+	origin.y = 0;
+	origin.z = 0;
+	float radius = PointDistance(origin, end_point); //distance from origin to point
+	
+	float angle_theta = atan2(end_point.y, end_point.x);  //angle counterclockwise from reference x-axis to point
+
+	float quad1_angB = acos((radius * radius - LEN_A * LEN_A - LEN_B * LEN_B) / (2 * LEN_A * LEN_B)); //second joint angle
+	
+	float quad1_angA = angle_theta + fabs(asin((sin(quad1_angB) * LEN_B)/radius)); //first joint angle
+	quad1_angB = quad1_angB - quad1_angA;
+
+	float quad2_angB = acos((radius * radius - LEN_A * LEN_A - LEN_B * LEN_B) / (2 * LEN_A * LEN_B)); //second joint angle
+	float quad2_angA = angle_theta - fabs(atan((LEN_B * sin(quad2_angB)) / (LEN_A + LEN_B * cos(quad2_angB)))); //first joint angle
+
+	//Servo position is +ve for -ve second joint angle
+		new_ang1 = ARM_A_OFFSET + toDegrees(quad1_angA);
+		displayString(2, "Angle A: %f", new_ang1);
+		new_ang2 = ARM_B_OFFSET + toDegrees(quad1_angB);
+		displayString(4, "Angle B: %f", new_ang2);
+
+		//Angle to the left or to the right
+		if(end_point.z > 0)
+			new_angZ = toDegrees(atan(end_point.z / end_point.x));
+		else
+			new_angZ = -toDegrees(atan(end_point.z / end_point.x));
+
+}//End
+
+// PointDistance calculates the length of the hypotenuse formed by two points
+//Point p1 - first point
+//Point p2 - second point
+float PointDistance(Point p1, Point p2){
+	return sqrt(pow(p2.x - p1.x, 2) + pow(p2.y - p1.y, 2));
+} //end PointDistance
+
+
+float toRadians(float angle)
+{
+	return angle * ((2 * PI) / 360.0);
+}
+
+float toDegrees(float angle)
+{
+	return angle * (360.0 / (2 * PI));
+}
