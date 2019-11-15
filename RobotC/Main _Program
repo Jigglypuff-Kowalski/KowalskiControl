@@ -1,0 +1,371 @@
+//ASSUME THAT THE MINIMUM DISTANCE BETWEEN BOXES IS EQUAL -
+//TO THE DISTANCE BETWEN THE CAMERA AND THE ULTRASONIC SENSOR
+
+#include "EV3Servo-lib-UW.c"
+#include "PC_FileIO.c"
+
+//Globals
+bool boxPicked = false;
+bool maxPalletHeight = false;
+bool readyToPick = false;
+TFileHandle fin;
+
+//Globals Arm
+
+//Globals Conveyor
+bool dimensionStatus = false;
+bool newBox = false;
+int currentBoxLocation = 0;
+int numBoxes = 0;
+
+//holds the value of the next blocks encoder location
+int nextBoxLocation = 0;
+
+//Constant Variables Conveyor
+const float HEIGHT = "Distance from sensor to conveyor (centimeters)";
+const float PICKUP = "Distance from camera to pick up location (inches)";
+const int MAXBOX = "Maximum Number of Boxes allowed on conveyor";
+const float TOL_C = 1;
+const int CONSPEED = 20;
+const int ULTRAONE = 20;
+const float TICKCONVERSIONC = 180/(PI*0.8);
+
+//Constant Variables Arm
+//2.5 ticks is one degree
+const float T_DEGS = 2.5;
+const float TOL_A = 2;
+const float LEN_A = 5.0;
+const float LEN_B = 4.0;
+const float ARM_A_OFFSET = -70;
+const float ARM_B_OFFSET = -50;
+const float CLAW_X_OFFSET = 1.97;
+const float CLAW_Y_OFFSET = 2.68;
+
+
+/***********************************************************************************************/
+//FUNCTIONS
+
+//Trivial function just checks if box is under ultrasonic sensor
+bool checkLocation()
+{
+	if(fabs(SensorValue[S1] - HEIGHT) > TOL_A)
+		return true;
+	return false;
+}
+
+//Grip function
+void grip(int position)
+{
+	if (position == 1)
+	{
+		setServoSpeed(S1,3,20);
+		wait1Msec(1000);
+	}
+	else
+	{
+		setServoSpeed(S1,3,-50);
+		wait1Msec(1000);
+	}
+}
+
+//struct point
+typedef struct
+{
+	float x;
+	float y;
+	float z;
+} Point;
+
+Point pickLocation;
+Point end_point;
+
+int x = 0;
+int y = 0;
+int z = 0;
+float new_ang_a = 0;
+float new_ang_b = 0;
+float new_ang_c = 0;
+
+//MoveTurret
+void moveTurret(float degrees)
+{
+	degrees = degrees * T_DEGS;
+	if(degrees>0)
+	{
+		motor[motorA] = 10;
+		while (nMotorEncoder[motorA] < degrees)
+		{}
+	}
+	else if(degrees == 0)
+	{
+		if (nMotorEncoder[motorA] > 0)
+		{
+			motor[motorA] = -10;
+		}
+		else
+		{
+			motor[motorA] = 10;
+		}
+		while (fabs(nMotorEncoder[motorA]) > TOL_A)
+		{}
+	}
+	else
+	{
+		motor[motorA] = -15;
+		while (nMotorEncoder[motorA] > degrees)
+		{}
+	}
+	motor[motorA] = 0;
+}
+
+//InverseKinematics calculates the joint angles given an endpoint
+//Point p - endpoint in Cartesian space
+//double curr_ang1 - current angle of first joint
+//double curr_ang2 - current angle of second joint
+//return - new first and second joint angles
+
+// PointDistance calculates the length of the hypotenuse formed by two points
+//Point p1 - first point
+//Point p2 - second point
+float PointDistance(Point p1, Point p2){
+	return sqrt(pow(p2.x - p1.x, 2) + pow(p2.y - p1.y, 2));
+} //end PointDistance
+
+float toRadians(float angle)
+{
+	return angle * ((2 * PI) / 360.0);
+}
+
+float toDegrees(float angle)
+{
+	return angle * (360.0 / (2 * PI));
+}
+
+void inverseKinematics(Point end_point, float & new_ang1, float & new_ang2, float & new_angZ)
+{
+
+	Point origin;
+	origin.x = 0;
+	origin.y = 0;
+	origin.z = 0;
+	float radius = PointDistance(origin, end_point); //distance from origin to point
+
+	float angle_theta = atan2(end_point.y, end_point.x);  //angle counterclockwise from reference x-axis to point
+
+	float quad1_angB = acos((radius * radius - LEN_A * LEN_A - LEN_B * LEN_B) / (2 * LEN_A * LEN_B)); //second joint angle
+
+	float quad1_angA = angle_theta + fabs(asin((sin(quad1_angB) * LEN_B)/radius)); //first joint angle
+	quad1_angB = quad1_angB - quad1_angA;
+
+	float quad2_angB = acos((radius * radius - LEN_A * LEN_A - LEN_B * LEN_B) / (2 * LEN_A * LEN_B)); //second joint angle
+	float quad2_angA = angle_theta - fabs(atan((LEN_B * sin(quad2_angB)) / (LEN_A + LEN_B * cos(quad2_angB)))); //first joint angle
+
+	//Servo position is +ve for -ve second joint angle
+	new_ang1 = ARM_A_OFFSET + toDegrees(quad1_angA);
+	displayString(2, "Angle A: %f", new_ang1);
+	new_ang2 = ARM_B_OFFSET + toDegrees(quad1_angB);
+	displayString(4, "Angle B: %f", new_ang2);
+
+	//Angle to the left or to the right
+	if(end_point.z > 0)
+		new_angZ = toDegrees(atan(end_point.z / end_point.x));
+	else
+		new_angZ = -toDegrees(atan(end_point.z / end_point.x));
+
+}//End
+
+//Function to pick up a box on the conveyor;
+void pickUpBox()
+{
+	inverseKinematics(pickLocation, new_ang_a, new_ang_b, new_ang_c);
+	moveTurret(new_ang_c);
+	grip(0);
+	setServoPosition(S1, 1, new_ang_b);
+	setServoPosition(S1, 2, new_ang_a);
+	grip(1);
+
+	setServoPosition(S1, 1, -30);
+	setServoPosition(S1, 2, 10);
+
+	boxPicked = true;
+}
+
+void readFile()
+{
+	int stat;
+	int pallet;
+	bool fileOkay = openReadPC(fin, "Hello.txt");
+	readIntPC(fin, stat);
+	if(stat == 1)
+		dimensionStatus = true;
+	else
+	{
+		dimensionStatus= false;
+		readIntPC(fin, pallet);
+		if(pallet == 1)
+			maxPalletHeight = true;
+		else 
+			maxPalletHeight = false;
+		readIntPC(fin, x);
+		end_point.x = x - CLAW_X_OFFSET;
+		readIntPC(fin, y);
+		end_point.y = y + CLAW_Y_OFFSET;
+		readIntPC(fin, z);
+		end_point.z = z;
+	}
+}
+
+//Function that Dimensions the boxes
+void dimensionBox()
+{
+	//Find box depth
+	double boxDepth = 0;
+	wait1Msec(450)
+	boxDepth = HEIGHT - SensorValue[S1]; // difference between the top of the box and the top of the conveyor
+	wait1Msec(50);
+
+
+	//Move box until at the center of the camera field of view
+	motor[motorA] = CONSPEED;
+	while(!dimensionStatus) //Moves the conveyor until centered under camera
+	{
+		readFile();
+		//In the case that there is a box ahead of the current box
+		//If the ahead box reaches the pickup location the conveyor must wait for it to be picked up
+		if(((nMotorEncoder[motorA] - currentBoxLocation) * TICKCONVERSIONC) < PICKUP)
+		{
+			motor[motorA] = 0;
+			readyToPick = true;
+			boxPicked = false;
+			while(!boxPicked)
+			{}
+			boxPicked = true;
+			readyToPick = false;
+			motor[motorA] = CONSPEED;
+		}
+		//conveyor continues after ahead box is picked up
+	}
+	motor[motorA] = 0;
+
+	while(dimensionStatus)
+	{
+		readFile();
+	}
+	newBox = false;
+	nextBoxLocation = nMotorEncoder[motorA]; //Get the current encoder value when this box is at the camera center
+}
+
+
+
+/****************************************************************************************/
+//THIS IS THE THREAD THAT RUNS THE ARM
+task runArm()
+{
+	pickLocation.x = 4;
+	pickLocation.y = 5;
+	pickLocation.z = 6;
+	SensorType[S1] = sensorI2CCustom9V;
+
+	while(!maxPalletHeight && time1[T1] < 30000)
+	{
+		while(!readyToPick)
+		{}
+
+		pickUpBox();
+
+		inverseKinematics(end_point, new_ang_a, new_ang_b, new_ang_c);
+		moveTurret(new_ang_c);
+		setServoPosition(S1, 1, new_ang_b);
+		setServoPosition(S1, 2, new_ang_a);
+		grip(0);
+
+		setServoPosition(S1, 1, -30);
+		setServoPosition(S1, 2, 10);
+		grip(1);
+	}
+
+}
+/****************************************************************************************/
+
+
+
+/****************************************************************************************/
+//THIS IS THE THREAD THAT RUNS THE CONVEYOR
+task runConveyor()
+{
+	while(!maxPalletHeight && time1[T1] < 30000)
+	{
+		numBoxes = 0;
+		//wait until a box is placed onto conveyor
+		while(SensorValue[S2] >= ULTRAONE)
+		{}
+		clearTimer(T1);
+		//Move boxes so another box can be placed
+		while(numBoxes < MAXBOX && time1[T1] < 10000)
+		{
+			numBoxes++;
+			motor[motorA] = CONSPEED;
+			while(nMotorEncoder[motorA] < 2*TICKCONVERSIONC)
+			{}
+			motor[motorA] = 0;
+			while(SensorValue[S2] >= ULTRAONE && time1[T1] < 10000)
+			{}
+			if(!SensorValue[S2] >= ULTRAONE)
+				clearTimer(T1);
+
+		}
+		dimensionBox();
+		while(!maxPalletHeight)
+		{
+
+			//Move box until its centered at pick up location
+			do{
+				//If the box is between the camera and the pick up
+				//This makes sure that we still only move the conveyor until that box is at the pick up
+				currentBoxLocation = nMotorEncoder[motorA] + (nMotorEncoder[motorA] - nextBoxLocation);
+				motor[motorA] = CONSPEED;
+				while(((nMotorEncoder[motorA] - currentBoxLocation) * TICKCONVERSIONC) < PICKUP)
+				{
+					//While moving to the pick up if a second box appears under the ultrasonic sensor
+					newBox = checkLocation();
+					if(newBox)
+						dimensionBox();
+				}
+				motor[motorA] = 0;
+				readyToPick = true;
+				while(!boxPicked)
+				{}
+				readyToPick = false;
+			}while(newBox)
+		}
+		clearTimer(T1);
+		while(SensorValue[S2] >= ULTRAONE && time1[T1] < 30000)
+		{}
+	}
+
+}
+/****************************************************************************************/
+
+
+
+//Main Program
+task main()
+{
+	//Configure all Sensors
+	SensorType[S3] = sensorEV3_Color;
+	wait1Msec(50);
+	SensorMode[S3] = modeEV3Color_Color;
+	wait1Msec(50);
+	SensorType[S2] = sensorEV3_Ultrasonic;
+	wait1Msec(50);
+	SensorType[S1] = sensorEV3_Ultrasonic;
+	wait1Msec(50);
+
+	//Configure Motors
+	nMotorEncoder[motorA] = 0;
+	nMotorEncoder[motorD] = 0;
+
+	//Run the Conveyor and Arm Threads
+	startTask(runArm);
+	startTask(runConveyor);
+}
