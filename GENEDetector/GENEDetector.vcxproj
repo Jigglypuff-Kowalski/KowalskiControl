@@ -158,9 +158,6 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="GENEDetector.cpp" />
-    <ClCompile Include="Inverse Kinematics.cpp" />
-    <ClCompile Include="Point.cpp" />
-    <ClCompile Include="PIDController.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
