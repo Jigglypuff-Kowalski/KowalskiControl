@@ -1,0 +1,93 @@
+#include "EV3Servo-lib-UW.c"
+
+//2.5 ticks is one degree
+const float T_DEGS = 2.5;
+const float TOL = 2;
+void moveTurret(float degrees)
+{
+	degrees = degrees * T_DEGS;
+	if(degrees>0)
+	{
+		motor[motorA] = 15;
+		while (nMotorEncoder[motorA] < degrees)
+		{}
+	}
+	else if(degrees == 0)
+	{
+		if (nMotorEncoder[motorA] >0)
+		{
+			motor[motorA] = -15;
+		}
+		else
+		{
+			motor[motorA] = 15;
+		}
+		while (fabs(nMotorEncoder[motorA]) > TOL)
+		{}
+	}
+	else
+	{
+		motor[motorA] = -15;
+		while (nMotorEncoder[motorA] > degrees)
+		{}
+	}
+	motor[motorA] = 0;
+}
+
+void grip(int pos)
+{
+	if (pos ==1)
+	{
+		setServoSpeed(S1,3,20);
+		wait1Msec(1000);
+	}
+	else
+	{
+		setServoSpeed(S1,3,-50);
+		wait1Msec(1000);
+	}
+}
+
+task main()
+{
+
+	SensorType[S1]=sensorI2CCustom9V;
+	nMotorEncoder[motorA] = 0;
+
+	while(!getButtonPress(buttonEnter))
+	{
+		if (getButtonPress(buttonUp))
+		{
+			while(getButtonPress(buttonUp))
+			{}
+			moveTurret(90);
+			setServoPosition(S1, 1, -40);
+			setServoPosition(S1, 2, 0);
+			grip(1);
+		}
+
+		if (getButtonPress(buttonDown))
+		{
+			while(getButtonPress(buttonDown))
+			{}
+			moveTurret(0);
+			setServoPosition(S1, 1, -40);
+			setServoPosition(S1, 2, -60);
+			grip(0);
+		}
+
+		if (getButtonPress(buttonLeft))
+		{
+
+			while(getButtonPress(buttonLeft))
+			{}
+			moveTurret(-90);
+			setServoPosition(S1, 1, -50);
+			setServoPosition(S1, 2, 10);
+			grip(1);
+		}
+
+
+	}
+
+}
